@@ -14,7 +14,8 @@ const els = {
     help: document.getElementById('help-modal'),
     errorMsg: document.getElementById('error-msg'),
     markerImg: document.getElementById('marker-img'),
-    linkMarker: document.getElementById('link-marker')
+    linkMarker: document.getElementById('link-marker'),
+    btnStart: document.getElementById('btn-start')
 };
 
 // Initialize Icons
@@ -44,23 +45,45 @@ const showHelp = (show) => {
     else els.help.classList.add('hidden');
 };
 
+// Polling for libs
+const waitForLibs = () => {
+    return new Promise((resolve, reject) => {
+        if (window.MINDAR && window.THREE) {
+            resolve();
+            return;
+        }
+
+        const maxRetries = 50; // 5 seconds
+        let retries = 0;
+
+        const interval = setInterval(() => {
+            retries++;
+            if (window.MINDAR && window.THREE) {
+                clearInterval(interval);
+                resolve();
+            } else if (window.arLibsFailed) {
+                clearInterval(interval);
+                reject("AR Libraries failed to load.");
+            } else if (retries > maxRetries) {
+                clearInterval(interval);
+                reject("Timeout waiting for AR libraries.");
+            }
+        }, 100);
+    });
+};
+
 const startExperience = async () => {
-    if (window.arLibsFailed) {
-        showError("Failed to load AR libraries. Check your internet connection or ad blockers.");
+    // 1. Check/Wait for Libs
+    try {
+        els.btnStart.textContent = "Loading...";
+        await waitForLibs();
+    } catch (e) {
+        showError(e);
+        els.btnStart.textContent = "Start AR Experience";
         return;
     }
 
-    if (!window.THREE) {
-        showError("Three.js library is missing.");
-        return;
-    }
-
-    if (!window.MINDAR) {
-        showError("MindAR library is missing.");
-        return;
-    }
-
-    // 1. Permissions (iOS)
+    // 2. Permissions (iOS)
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
             const state = await DeviceOrientationEvent.requestPermission();
@@ -72,12 +95,12 @@ const startExperience = async () => {
         }
     }
 
-    // 2. UI Updates
+    // 3. UI Updates
     els.splash.classList.add('hidden');
     els.scanning.classList.remove('hidden');
     els.header.classList.remove('hidden');
 
-    // 3. Init AR
+    // 4. Init AR
     initAR();
 };
 
