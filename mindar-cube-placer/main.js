@@ -9,11 +9,10 @@ import * as ThreeModule from 'three';
 
 // CRITICAL FIX: 
 // 'import * as ...' creates a read-only Module Namespace Object.
-// MindAR and other legacy libraries often try to modify/extend the global THREE object.
-// We must spread the module into a mutable object to prevent "Script error" or "Cannot assign to read only property" errors.
+// We must spread the module into a mutable object for MindAR compatibility.
 window.THREE = { ...ThreeModule };
 
-// Clear any existing Service Workers that might be caching old files (index.tsx/css)
+// Clear any existing Service Workers
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for(let registration of registrations) {
@@ -63,31 +62,17 @@ const showHelp = (show) => {
     else els.help.classList.add('hidden');
 };
 
-// Loader for MindAR
-// We load this dynamically to ensure THREE is set on window before MindAR executes.
-const loadMindAR = () => {
-    return new Promise((resolve, reject) => {
-        if (window.MINDAR) {
-            resolve();
-            return;
-        }
-
-        const script = document.createElement('script');
-        script.src = "https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js";
-        script.crossOrigin = "anonymous";
-        script.onload = () => resolve();
-        script.onerror = () => reject("Failed to load MindAR script");
-        document.head.appendChild(script);
-    });
-};
-
 const startExperience = async () => {
     els.btnStart.textContent = "Loading...";
     els.btnStart.disabled = true;
 
     try {
-        // 1. Load MindAR
-        await loadMindAR();
+        // 1. Load MindAR dynamically as a module
+        // We use import() because the CDN file is an ES module.
+        // We use version 1.2.5 for better stability with THREE 0.147.0
+        if (!window.MINDAR) {
+            await import("https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js");
+        }
 
         // 2. Permissions (iOS)
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -124,11 +109,12 @@ const initAR = async () => {
 
     const { MINDAR } = window;
 
-    // MindAR 1.2.2 + Three r180 compatibility check
+    // Initialize MindAR Three
+    // Note: We disabled uiLoading and uiScanning to use our own custom UI
     mindarThree = new MINDAR.IMAGE.MindARThree({
         container: document.getElementById('ar-container'),
         imageTargetSrc: MINDAR_IMAGE_TARGET_SRC,
-        uiLoading: "no",
+        uiLoading: "no", 
         uiScanning: "no",
         uiError: "yes",
         filterMinCF: 0.0001, 
@@ -153,6 +139,8 @@ const initAR = async () => {
         CUBE_SIZE_AR_UNITS, 
         CUBE_SIZE_AR_UNITS
     );
+    
+    // Material
     const material = new window.THREE.MeshStandardMaterial({ 
         color: 0x00aaff,
         roughness: 0.2,
@@ -160,27 +148,29 @@ const initAR = async () => {
         transparent: true,
         opacity: 0.9,
     });
+    
     const cube = new window.THREE.Mesh(geometry, material);
     cube.position.y = CUBE_SIZE_AR_UNITS / 2; // Sit on top of image
 
-    // Wireframe
+    // Wireframe for better visibility
     const edges = new window.THREE.EdgesGeometry(geometry);
     const line = new window.THREE.LineSegments(edges, new window.THREE.LineBasicMaterial({ color: 0xffffff }));
     cube.add(line);
 
     anchor.group.add(cube);
 
-    // Start
+    // Start AR Engine
     await mindarThree.start();
     
-    // Success State
+    // Switch to Running UI
     els.scanning.classList.add('hidden');
     els.running.classList.remove('hidden');
 
     // Render Loop
     renderer.setAnimationLoop(() => {
-        cube.rotation.y += 0.01;
-        cube.rotation.x += 0.005;
+        if (cube) {
+            cube.rotation.y += 0.01;
+        }
         renderer.render(scene, camera);
     });
 };

@@ -8,17 +8,16 @@
     <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon"> 
     
     <!-- Utilities -->
-    <!-- Pinned version of Tailwind to avoid 302 Redirect CORS issues -->
     <script src="https://cdn.tailwindcss.com/3.4.1"></script>
     
     <!-- Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Import Map: Defines 'three' so imports work correctly across modules -->
+    <!-- Import Map: Using Three.js 0.147.0 which is more compatible with MindAR 1.2.x -->
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js"
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.module.min.js"
       }
     }
     </script>
