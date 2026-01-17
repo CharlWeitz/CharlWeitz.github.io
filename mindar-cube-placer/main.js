@@ -13,6 +13,15 @@ import * as ThreeModule from 'three';
 // We must spread the module into a mutable object to prevent "Script error" or "Cannot assign to read only property" errors.
 window.THREE = { ...ThreeModule };
 
+// Clear any existing Service Workers that might be caching old files (index.tsx/css)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for(let registration of registrations) {
+            registration.unregister();
+        }
+    });
+}
+
 // DOM Elements
 const els = {
     splash: document.getElementById('splash-screen'),
