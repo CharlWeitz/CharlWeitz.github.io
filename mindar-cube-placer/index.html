@@ -13,11 +13,12 @@
     <!-- Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Import Map: Using Three.js 0.147.0 which is more compatible with MindAR 1.2.x -->
+    <!-- Import Map: Defines modules for strict ES6 loading -->
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.module.min.js"
+        "three": "https://unpkg.com/three@0.147.0/build/three.module.js",
+        "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
       }
     }
     </script>

@@ -9,7 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "latest"
+    "three": "0.147.0",
+    "mindar-image-three": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

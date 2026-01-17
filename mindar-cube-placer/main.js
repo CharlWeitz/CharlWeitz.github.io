@@ -4,13 +4,14 @@ import {
     CUBE_SIZE_AR_UNITS 
 } from './constants.js';
 
-// Import Three.js as a module (using the Import Map in index.html)
-import * as ThreeModule from 'three';
+// Import libraries via Import Map
+import * as THREE from 'three';
+import { MindARThree } from 'mindar-image-three';
 
-// CRITICAL FIX: 
-// 'import * as ...' creates a read-only Module Namespace Object.
-// We must spread the module into a mutable object for MindAR compatibility.
-window.THREE = { ...ThreeModule };
+// Compatibility Layer:
+// MindAR 1.x internally might look for window.THREE or assume certain globals.
+// We explicitly attach THREE to window to ensure internal compatibility.
+window.THREE = THREE;
 
 // Clear any existing Service Workers
 if ('serviceWorker' in navigator) {
@@ -67,14 +68,8 @@ const startExperience = async () => {
     els.btnStart.disabled = true;
 
     try {
-        // 1. Load MindAR dynamically as a module
-        // We use import() because the CDN file is an ES module.
-        // We use version 1.2.5 for better stability with THREE 0.147.0
-        if (!window.MINDAR) {
-            await import("https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js");
-        }
-
-        // 2. Permissions (iOS)
+        // 1. Permissions (iOS)
+        // This is primarily for device orientation/motion sensors which might be used by MindAR or ThreeJS controls
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
                 const state = await DeviceOrientationEvent.requestPermission();
@@ -86,12 +81,12 @@ const startExperience = async () => {
             }
         }
 
-        // 3. UI Updates
+        // 2. UI Updates
         els.splash.classList.add('hidden');
         els.scanning.classList.remove('hidden');
         els.header.classList.remove('hidden');
 
-        // 4. Init AR
+        // 3. Init AR
         await initAR();
 
     } catch (e) {
@@ -103,15 +98,10 @@ const startExperience = async () => {
 };
 
 const initAR = async () => {
-    if (!window.MINDAR) {
-        throw new Error("MindAR library not loaded");
-    }
-
-    const { MINDAR } = window;
-
     // Initialize MindAR Three
     // Note: We disabled uiLoading and uiScanning to use our own custom UI
-    mindarThree = new MINDAR.IMAGE.MindARThree({
+    // mindar-image-three exports the class MindARThree directly
+    mindarThree = new MindARThree({
         container: document.getElementById('ar-container'),
         imageTargetSrc: MINDAR_IMAGE_TARGET_SRC,
         uiLoading: "no", 
@@ -124,9 +114,9 @@ const initAR = async () => {
     const { renderer, scene, camera } = mindarThree;
 
     // Lighting
-    const ambientLight = new window.THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     scene.add(ambientLight);
-    const dirLight = new window.THREE.DirectionalLight(0xffffff, 0.5);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
     dirLight.position.set(0, 5, 5);
     scene.add(dirLight);
 
@@ -134,14 +124,14 @@ const initAR = async () => {
     const anchor = mindarThree.addAnchor(0);
     
     // Cube
-    const geometry = new window.THREE.BoxGeometry(
+    const geometry = new THREE.BoxGeometry(
         CUBE_SIZE_AR_UNITS, 
         CUBE_SIZE_AR_UNITS, 
         CUBE_SIZE_AR_UNITS
     );
     
     // Material
-    const material = new window.THREE.MeshStandardMaterial({ 
+    const material = new THREE.MeshStandardMaterial({ 
         color: 0x00aaff,
         roughness: 0.2,
         metalness: 0.8,
@@ -149,12 +139,12 @@ const initAR = async () => {
         opacity: 0.9,
     });
     
-    const cube = new window.THREE.Mesh(geometry, material);
+    const cube = new THREE.Mesh(geometry, material);
     cube.position.y = CUBE_SIZE_AR_UNITS / 2; // Sit on top of image
 
     // Wireframe for better visibility
-    const edges = new window.THREE.EdgesGeometry(geometry);
-    const line = new window.THREE.LineSegments(edges, new window.THREE.LineBasicMaterial({ color: 0xffffff }));
+    const edges = new THREE.EdgesGeometry(geometry);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
     cube.add(line);
 
     anchor.group.add(cube);
