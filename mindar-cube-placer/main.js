@@ -4,14 +4,16 @@ import {
     CUBE_SIZE_AR_UNITS 
 } from './constants.js';
 
-// Import libraries via Import Map
+// Import Three.js via module for usage in this file
 import * as THREE from 'three';
-import { MindARThree } from 'mindar-image-three';
 
-// Compatibility Layer:
-// MindAR 1.x internally might look for window.THREE or assume certain globals.
-// We explicitly attach THREE to window to ensure internal compatibility.
+// Assign to window for MindAR compatibility
 window.THREE = THREE;
+
+// Import MindAR as a side-effect. 
+// The prod build in the CDN typically attaches to window.MINDAR.
+// It will now correctly resolve 'three' and 'three/addons/...' via the import map in index.html.
+import 'mindar-image-three';
 
 // Clear any existing Service Workers
 if ('serviceWorker' in navigator) {
@@ -69,7 +71,6 @@ const startExperience = async () => {
 
     try {
         // 1. Permissions (iOS)
-        // This is primarily for device orientation/motion sensors which might be used by MindAR or ThreeJS controls
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
                 const state = await DeviceOrientationEvent.requestPermission();
@@ -98,10 +99,13 @@ const startExperience = async () => {
 };
 
 const initAR = async () => {
+    // Access MindAR from global scope after import
+    if (!window.MINDAR || !window.MINDAR.IMAGE) {
+        throw new Error("MindAR library not loaded properly. Please refresh.");
+    }
+
     // Initialize MindAR Three
-    // Note: We disabled uiLoading and uiScanning to use our own custom UI
-    // mindar-image-three exports the class MindARThree directly
-    mindarThree = new MindARThree({
+    mindarThree = new window.MINDAR.IMAGE.MindARThree({
         container: document.getElementById('ar-container'),
         imageTargetSrc: MINDAR_IMAGE_TARGET_SRC,
         uiLoading: "no", 
