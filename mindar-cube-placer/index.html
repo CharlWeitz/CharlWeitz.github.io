@@ -7,32 +7,17 @@
     <meta name="description" content="AR Cube visualization using MindAR" />
     
     <!-- Utilities -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>
     <!-- Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- AR Dependencies Loader -->
-    <!-- 
-      The user requested a specific ES Module version of Three.js.
-      MindAR expects a global window.THREE. 
-      We import the module, assign it to window.THREE, then dynamically load MindAR.
-    -->
-    <script type="module">
-      import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js';
-      window.THREE = THREE;
-      
-      const script = document.createElement('script');
-      script.src = "https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js";
-      script.onload = () => {
-        window.arLibsLoaded = true;
-        // Dispatch event in case main.js is waiting
-        window.dispatchEvent(new Event('mindar-ready'));
-      };
-      script.onerror = () => {
-        window.arLibsFailed = true;
-        console.error("MindAR failed to load");
-      };
-      document.head.appendChild(script);
+    <!-- Import Map: Defines 'three' so imports work correctly across modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.min.js"
+      }
+    }
     </script>
 
     <style>

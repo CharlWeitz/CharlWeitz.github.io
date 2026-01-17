@@ -4,6 +4,15 @@ import {
     CUBE_SIZE_AR_UNITS 
 } from './constants.js';
 
+// Import Three.js as a module (using the Import Map in index.html)
+import * as ThreeModule from 'three';
+
+// CRITICAL FIX: 
+// 'import * as ...' creates a read-only Module Namespace Object.
+// MindAR and other legacy libraries often try to modify/extend the global THREE object.
+// We must spread the module into a mutable object to prevent "Script error" or "Cannot assign to read only property" errors.
+window.THREE = { ...ThreeModule };
+
 // DOM Elements
 const els = {
     splash: document.getElementById('splash-screen'),
@@ -45,136 +54,130 @@ const showHelp = (show) => {
     else els.help.classList.add('hidden');
 };
 
-// Polling for libs
-const waitForLibs = () => {
+// Loader for MindAR
+// We load this dynamically to ensure THREE is set on window before MindAR executes.
+const loadMindAR = () => {
     return new Promise((resolve, reject) => {
-        if (window.MINDAR && window.THREE) {
+        if (window.MINDAR) {
             resolve();
             return;
         }
 
-        const maxRetries = 50; // 5 seconds
-        let retries = 0;
-
-        const interval = setInterval(() => {
-            retries++;
-            if (window.MINDAR && window.THREE) {
-                clearInterval(interval);
-                resolve();
-            } else if (window.arLibsFailed) {
-                clearInterval(interval);
-                reject("AR Libraries failed to load.");
-            } else if (retries > maxRetries) {
-                clearInterval(interval);
-                reject("Timeout waiting for AR libraries.");
-            }
-        }, 100);
+        const script = document.createElement('script');
+        script.src = "https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js";
+        script.crossOrigin = "anonymous";
+        script.onload = () => resolve();
+        script.onerror = () => reject("Failed to load MindAR script");
+        document.head.appendChild(script);
     });
 };
 
 const startExperience = async () => {
-    // 1. Check/Wait for Libs
-    try {
-        els.btnStart.textContent = "Loading...";
-        await waitForLibs();
-    } catch (e) {
-        showError(e);
-        els.btnStart.textContent = "Start AR Experience";
-        return;
-    }
+    els.btnStart.textContent = "Loading...";
+    els.btnStart.disabled = true;
 
-    // 2. Permissions (iOS)
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-            const state = await DeviceOrientationEvent.requestPermission();
-            if (state !== 'granted') {
-                console.warn('Motion permission denied');
+    try {
+        // 1. Load MindAR
+        await loadMindAR();
+
+        // 2. Permissions (iOS)
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const state = await DeviceOrientationEvent.requestPermission();
+                if (state !== 'granted') {
+                    console.warn('Motion permission denied');
+                }
+            } catch (e) {
+                console.warn("Permission request error", e);
             }
-        } catch (e) {
-            console.warn(e);
         }
-    }
 
-    // 3. UI Updates
-    els.splash.classList.add('hidden');
-    els.scanning.classList.remove('hidden');
-    els.header.classList.remove('hidden');
+        // 3. UI Updates
+        els.splash.classList.add('hidden');
+        els.scanning.classList.remove('hidden');
+        els.header.classList.remove('hidden');
 
-    // 4. Init AR
-    initAR();
-};
-
-const initAR = async () => {
-    try {
-        const { THREE, MINDAR } = window;
-
-        mindarThree = new MINDAR.IMAGE.MindARThree({
-            container: document.getElementById('ar-container'),
-            imageTargetSrc: MINDAR_IMAGE_TARGET_SRC,
-            uiLoading: "no",
-            uiScanning: "no",
-            uiError: "yes",
-            filterMinCF: 0.0001, 
-            filterBeta: 0.001,
-        });
-
-        const { renderer, scene, camera } = mindarThree;
-
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        dirLight.position.set(0, 5, 5);
-        scene.add(dirLight);
-
-        // Content
-        const anchor = mindarThree.addAnchor(0);
-        
-        // Cube
-        const geometry = new THREE.BoxGeometry(
-            CUBE_SIZE_AR_UNITS, 
-            CUBE_SIZE_AR_UNITS, 
-            CUBE_SIZE_AR_UNITS
-        );
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0x00aaff,
-            roughness: 0.2,
-            metalness: 0.8,
-            transparent: true,
-            opacity: 0.9,
-        });
-        const cube = new THREE.Mesh(geometry, material);
-        cube.position.y = CUBE_SIZE_AR_UNITS / 2; // Sit on top of image
-
-        // Wireframe
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
-        cube.add(line);
-
-        anchor.group.add(cube);
-
-        // Start
-        await mindarThree.start();
-        
-        // Success State
-        els.scanning.classList.add('hidden');
-        els.running.classList.remove('hidden');
-
-        // Render Loop
-        renderer.setAnimationLoop(() => {
-            cube.rotation.y += 0.01;
-            cube.rotation.x += 0.005;
-            renderer.render(scene, camera);
-        });
+        // 4. Init AR
+        await initAR();
 
     } catch (e) {
         console.error(e);
-        showError("Failed to start AR. " + (e.message || "Ensure camera permissions are allowed."));
+        showError("Initialization failed: " + (e.message || "Script Error. Check console."));
+        els.btnStart.textContent = "Start AR Experience";
+        els.btnStart.disabled = false;
     }
 };
 
+const initAR = async () => {
+    if (!window.MINDAR) {
+        throw new Error("MindAR library not loaded");
+    }
+
+    const { MINDAR } = window;
+
+    // MindAR 1.2.2 + Three r180 compatibility check
+    mindarThree = new MINDAR.IMAGE.MindARThree({
+        container: document.getElementById('ar-container'),
+        imageTargetSrc: MINDAR_IMAGE_TARGET_SRC,
+        uiLoading: "no",
+        uiScanning: "no",
+        uiError: "yes",
+        filterMinCF: 0.0001, 
+        filterBeta: 0.001,
+    });
+
+    const { renderer, scene, camera } = mindarThree;
+
+    // Lighting
+    const ambientLight = new window.THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+    const dirLight = new window.THREE.DirectionalLight(0xffffff, 0.5);
+    dirLight.position.set(0, 5, 5);
+    scene.add(dirLight);
+
+    // Content
+    const anchor = mindarThree.addAnchor(0);
+    
+    // Cube
+    const geometry = new window.THREE.BoxGeometry(
+        CUBE_SIZE_AR_UNITS, 
+        CUBE_SIZE_AR_UNITS, 
+        CUBE_SIZE_AR_UNITS
+    );
+    const material = new window.THREE.MeshStandardMaterial({ 
+        color: 0x00aaff,
+        roughness: 0.2,
+        metalness: 0.8,
+        transparent: true,
+        opacity: 0.9,
+    });
+    const cube = new window.THREE.Mesh(geometry, material);
+    cube.position.y = CUBE_SIZE_AR_UNITS / 2; // Sit on top of image
+
+    // Wireframe
+    const edges = new window.THREE.EdgesGeometry(geometry);
+    const line = new window.THREE.LineSegments(edges, new window.THREE.LineBasicMaterial({ color: 0xffffff }));
+    cube.add(line);
+
+    anchor.group.add(cube);
+
+    // Start
+    await mindarThree.start();
+    
+    // Success State
+    els.scanning.classList.add('hidden');
+    els.running.classList.remove('hidden');
+
+    // Render Loop
+    renderer.setAnimationLoop(() => {
+        cube.rotation.y += 0.01;
+        cube.rotation.x += 0.005;
+        renderer.render(scene, camera);
+    });
+};
+
 // Event Listeners
-document.getElementById('btn-start').addEventListener('click', startExperience);
+els.btnStart.addEventListener('click', startExperience);
 document.getElementById('btn-help-header').addEventListener('click', () => showHelp(true));
 document.getElementById('btn-help-splash').addEventListener('click', () => showHelp(true));
 document.getElementById('btn-close-help').addEventListener('click', () => showHelp(false));
