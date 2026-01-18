@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hand Control Sphere</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #video-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 200px;
+            height: 150px;
+            z-index: 10;
+            opacity: 0.5;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 24px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">Loading Camera & AI...</div>
+    <!-- Hidden video element for MediaPipe -->
+    <video id="input_video" style="display:none"></video>
+    <!-- Small preview of what the camera sees -->
+    <canvas id="video-container"></canvas>
+
+    <!-- Import Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+    <script>
+        // --- PART 1: THREE.JS SETUP (The 3D Sphere) ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create the Point Cloud Sphere
+        const particleCount = 3000;
+        const geometry = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+
+        const colorObj = new THREE.Color();
+
+        for (let i = 0; i < particleCount; i++) {
+            // Math to distribute points evenly on a sphere surface
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+            
+            const radius = 2; // Base radius
+
+            const x = radius * Math.sin(phi) * Math.cos(theta);
+            const y = radius * Math.sin(phi) * Math.sin(theta);
+            const z = radius * Math.cos(phi);
+
+            positions.push(x, y, z);
+
+            // Add some cool coloring (Cyan/Blue mix)
+            colorObj.setHSL(0.5 + Math.random() * 0.2, 0.8, 0.5);
+            colors.push(colorObj.r, colorObj.g, colorObj.b);
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({ 
+            size: 0.05, 
+            vertexColors: true,
+            blending: THREE.AdditiveBlending 
+        });
+
+        const sphere = new THREE.Points(geometry, material);
+        scene.add(sphere);
+
+        camera.position.z = 8;
+
+        // --- PART 2: ANIMATION LOOP ---
+        let targetScale = 1;
+        let currentScale = 1;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Smoothly interpolate current scale to target scale (Lerp)
+            currentScale += (targetScale - currentScale) * 0.1;
+            sphere.scale.set(currentScale, currentScale, currentScale);
+
+            // Rotate sphere slowly
+            sphere.rotation.y += 0.002;
+            sphere.rotation.x += 0.001;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- PART 3: MEDIAPIPE HANDS SETUP (The AI) ---
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('video-container');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        function onResults(results) {
+            document.getElementById('loading').style.display = 'none';
+
+            // Draw video preview (optional)
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.restore();
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+
+                // Landmark 4 = Thumb Tip
+                // Landmark 8 = Index Finger Tip
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+
+                // Calculate distance between thumb and index finger
+                // (Simple Euclidean distance in 2D space)
+                const distance = Math.sqrt(
+                    Math.pow(thumbTip.x - indexTip.x, 2) + 
+                    Math.pow(thumbTip.y - indexTip.y, 2)
+                );
+
+                // Map distance to sphere scale
+                // 0.05 is roughly closed, 0.5 is roughly open wide
+                // We map this to a scale of 0.1 (tiny) to 2.5 (large)
+                
+                let newScale = (distance - 0.05) * 6; 
+                
+                // Clamp values so it doesn't disappear or get too huge
+                if (newScale < 0.1) newScale = 0.1;
+                if (newScale > 3.0) newScale = 3.0;
+
+                targetScale = newScale;
+            } else {
+                // If no hand detected, return to default size
+                targetScale = 1;
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+        cameraUtils.start();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
