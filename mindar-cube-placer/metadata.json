@@ -1,7 +1,0 @@
-{
-  "name": "MindAR Cube Placer",
-  "description": "A cross-platform web AR application to visualize a 10cm³ cube using MindAR image tracking technology.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
