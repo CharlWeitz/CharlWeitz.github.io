@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>WebXR 30cm Cube Placement</title>
+    <title>WebXR: Rotate & Scale Cube</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; }
         #info {
             position: absolute;
             top: 10px;
@@ -15,13 +15,14 @@
             color: white;
             text-shadow: 0 0 4px rgba(0,0,0,0.8);
             pointer-events: none;
+            background: rgba(0,0,0,0.2);
+            padding: 10px 0;
         }
     </style>
 </head>
 <body>
-    <div id="info">Find a flat surface and tap to place the 30cm cube</div>
+    <div id="info">Scan floor, tap to place. <br> Swipe to rotate, Pinch to resize.</div>
 
-    <!-- Import maps for Three.js -->
     <script type="importmap">
         {
             "imports": {
@@ -35,22 +36,27 @@
         import * as THREE from 'three';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-        // --- MANDATORY DEVICE CHECK ---
+        // --- DEVICE CHECK ---
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         
         if (isIOS && isSafari) {
-            const msg = "This WebXR experience requires features not natively enabled in iOS Safari. Please use the Mozilla WebXR Viewer app to continue.";
-            alert(msg);
+            alert("This WebXR experience requires features not natively enabled in iOS Safari. Please use the Mozilla WebXR Viewer app.");
             window.location.href = "https://apps.apple.com/us/app/webxr-viewer/id1295998056";
         }
-        // ------------------------------
 
-        let container;
-        let camera, scene, renderer;
-        let reticle;
+        // --- APP VARIABLES ---
+        let container, camera, scene, renderer, reticle;
         let hitTestSource = null;
         let hitTestSourceRequested = false;
+
+        let placedCube = null; // Track the single cube
+        
+        // Interaction State
+        let initialDist = 0;
+        let initialScale = 1;
+        let initialTouchX = 0;
+        let initialRotationY = 0;
 
         init();
         animate();
@@ -60,49 +66,22 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
-            light.position.set(0.5, 1, 0.25);
             scene.add(light);
 
-            // Renderer setup
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // Add AR Button with Hit Test feature
             document.body.appendChild(ARButton.createButton(renderer, { 
                 requiredFeatures: ['hit-test'] 
             }));
 
-            // Create the Cube (30cm^3 = 0.3m per side)
-            const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-            const material = new THREE.MeshPhongMaterial({ 
-                color: 0x00ff00, 
-                transparent: true, 
-                opacity: 0.6 
-            });
-
-            // Interaction: Place cube on tap
-            function onSelect() {
-                if (reticle.visible) {
-                    const mesh = new THREE.Mesh(geometry, material);
-                    reticle.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
-                    // Offset by 15cm so it sits ON the surface rather than inside it
-                    mesh.position.y += 0.15; 
-                    scene.add(mesh);
-                }
-            }
-
-            const controller = renderer.xr.getController(0);
-            controller.addEventListener('select', onSelect);
-            scene.add(controller);
-
-            // Create Reticle (UI indicator for surface detection)
+            // Reticle for surface detection
             reticle = new THREE.Mesh(
                 new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
                 new THREE.MeshBasicMaterial()
@@ -111,7 +90,79 @@
             reticle.visible = false;
             scene.add(reticle);
 
+            // Placement Trigger
+            const controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onSelect);
+            scene.add(controller);
+
+            // Gesture Listeners
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
             window.addEventListener('resize', onWindowResize);
+        }
+
+        function onSelect() {
+            // Only place if reticle is visible and no cube exists yet
+            if (reticle.visible && !placedCube) {
+                const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+                const material = new THREE.MeshPhongMaterial({ 
+                    color: 0x00ff00, 
+                    transparent: true, 
+                    opacity: 0.6 
+                });
+
+                placedCube = new THREE.Mesh(geometry, material);
+                reticle.matrix.decompose(placedCube.position, placedCube.quaternion, placedCube.scale);
+                
+                // Offset by half height (15cm) so it sits on top of the plane
+                placedCube.position.y += 0.15;
+                scene.add(placedCube);
+                
+                reticle.visible = false;
+                document.getElementById('info').innerHTML = "Cube placed!<br>Swipe to rotate, Pinch to resize.";
+            }
+        }
+
+        // --- GESTURE LOGIC ---
+
+        function onTouchStart(e) {
+            if (!placedCube) return;
+
+            if (e.touches.length === 1) {
+                // For Rotation
+                initialTouchX = e.touches[0].pageX;
+                initialRotationY = placedCube.rotation.y;
+            } else if (e.touches.length === 2) {
+                // For Scaling (Pinch)
+                initialDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                initialScale = placedCube.scale.x;
+            }
+        }
+
+        function onTouchMove(e) {
+            if (!placedCube) return;
+            e.preventDefault(); // Prevent scrolling while interacting
+
+            if (e.touches.length === 1) {
+                // Swipe to rotate (Y-axis)
+                const deltaX = e.touches[0].pageX - initialTouchX;
+                placedCube.rotation.y = initialRotationY + deltaX * 0.01;
+            } 
+            else if (e.touches.length === 2) {
+                // Pinch to scale
+                const currentDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                const scaleFactor = currentDist / initialDist;
+                const newScale = initialScale * scaleFactor;
+                
+                // Set uniform scale
+                placedCube.scale.set(newScale, newScale, newScale);
+            }
         }
 
         function onWindowResize() {
@@ -129,7 +180,6 @@
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 const session = renderer.xr.getSession();
 
-                // Initialize hit testing
                 if (hitTestSourceRequested === false) {
                     session.requestReferenceSpace('viewer').then((viewerSpace) => {
                         session.requestHitTestSource({ space: viewerSpace }).then((source) => {
@@ -143,8 +193,7 @@
                     hitTestSourceRequested = true;
                 }
 
-                // Process hit test results
-                if (hitTestSource) {
+                if (hitTestSource && !placedCube) {
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
                     if (hitTestResults.length) {
                         const hit = hitTestResults[0];
@@ -153,9 +202,11 @@
                     } else {
                         reticle.visible = false;
                     }
+                } else if (placedCube) {
+                    // Hide reticle once cube is placed
+                    reticle.visible = false;
                 }
             }
-
             renderer.render(scene, camera);
         }
     </script>
