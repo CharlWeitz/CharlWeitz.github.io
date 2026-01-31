@@ -17,20 +17,66 @@
             display: block;
         }
 
+        /* UI Container Styling */
         #ui-container {
             position: absolute;
             top: 10px;
             right: 10px;
             width: 300px;
             background: rgba(20, 20, 20, 0.85);
-            padding: 15px;
             border-radius: 8px;
             border: 1px solid #444;
             backdrop-filter: blur(5px);
             user-select: none;
+            transition: all 0.3s ease;
+            overflow: hidden; /* Ensures content doesn't spill when collapsed */
         }
 
-        h2 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 1px solid #555; padding-bottom: 5px; }
+        /* Header / Toggle Button */
+        #ui-header {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid transparent;
+            transition: background 0.2s;
+        }
+
+        #ui-header:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        #ui-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            pointer-events: none; /* Let clicks pass to header */
+        }
+
+        #toggle-icon {
+            font-size: 0.8rem;
+            color: #aaa;
+            transition: transform 0.3s;
+        }
+
+        /* Collapsed State */
+        #ui-container.collapsed #ui-content {
+            display: none;
+        }
+
+        #ui-container.collapsed #toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        #ui-container:not(.collapsed) #ui-header {
+            border-bottom: 1px solid #444;
+        }
+
+        /* Content Area */
+        #ui-content {
+            padding: 15px;
+        }
 
         .control-group {
             margin-bottom: 10px;
@@ -69,6 +115,7 @@
             left: 10px;
             color: #555;
             font-family: monospace;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -78,57 +125,67 @@
     <canvas id="simCanvas"></canvas>
 
     <div id="ui-container">
-        <h2>Particle Life</h2>
-        
-        <div class="control-group">
-            <label>Particles</label>
-            <input type="range" id="param-number" min="500" max="3000" step="100" value="1200">
-            <span class="val" id="val-number">1200</span>
+        <!-- Clickable Header -->
+        <div id="ui-header">
+            <h2>Particle Life Settings</h2>
+            <span id="toggle-icon">▼</span>
         </div>
 
-        <div class="control-group">
-            <label>Colors (Types)</label>
-            <input type="range" id="param-types" min="2" max="6" step="1" value="4">
-            <span class="val" id="val-types">4</span>
-        </div>
+        <!-- Collapsible Content -->
+        <div id="ui-content">
+            <div class="control-group">
+                <label>Particles</label>
+                <input type="range" id="param-number" min="500" max="3000" step="100" value="1200">
+                <span class="val" id="val-number">1200</span>
+            </div>
 
-        <div class="control-group">
-            <label>Interaction Radius</label>
-            <input type="range" id="param-radius" min="10" max="200" value="80">
-            <span class="val" id="val-radius">80</span>
-        </div>
+            <div class="control-group">
+                <label>Colors (Types)</label>
+                <input type="range" id="param-types" min="2" max="6" step="1" value="4">
+                <span class="val" id="val-types">4</span>
+            </div>
 
-        <div class="control-group">
-            <label>Force Strength</label>
-            <input type="range" id="param-force" min="0.1" max="5" step="0.1" value="1.0">
-            <span class="val" id="val-force">1.0</span>
-        </div>
+            <div class="control-group">
+                <label>Interaction Radius</label>
+                <input type="range" id="param-radius" min="10" max="200" value="80">
+                <span class="val" id="val-radius">80</span>
+            </div>
 
-        <div class="control-group">
-            <label>Friction (0-1)</label>
-            <input type="range" id="param-friction" min="0.01" max="0.99" step="0.01" value="0.5">
-            <span class="val" id="val-friction">0.5</span>
-        </div>
+            <div class="control-group">
+                <label>Force Strength</label>
+                <input type="range" id="param-force" min="0.1" max="5" step="0.1" value="1.0">
+                <span class="val" id="val-force">1.0</span>
+            </div>
 
-        <button id="btn-reset">Randomize Rules & Reset</button>
-        <button id="btn-pause">Pause / Play</button>
+            <div class="control-group">
+                <label>Friction (0-1)</label>
+                <input type="range" id="param-friction" min="0.01" max="0.99" step="0.01" value="0.5">
+                <span class="val" id="val-friction">0.5</span>
+            </div>
+
+            <button id="btn-reset">Randomize Rules & Reset</button>
+            <button id="btn-pause">Pause / Play</button>
+        </div>
     </div>
 
 <script>
     /**
      * PARTICLE LIFE SIMULATION
-     * 
-     * Core Concept:
-     * 1. Particles have a color (type).
-     * 2. An interaction matrix defines how Color A affects Color B (Attract/Repel).
-     * 3. Forces are applied based on distance.
      */
 
     const canvas = document.getElementById('simCanvas');
-    const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency
+    const ctx = canvas.getContext('2d', { alpha: false }); 
     const fpsDiv = document.getElementById('fps-counter');
 
-    // UI Elements
+    // UI Logic (Collapse)
+    const uiContainer = document.getElementById('ui-container');
+    const uiHeader = document.getElementById('ui-header');
+    
+    uiHeader.addEventListener('click', () => {
+        uiContainer.classList.toggle('collapsed');
+    });
+
+    // Inputs
     const inputNumber = document.getElementById('param-number');
     const inputTypes = document.getElementById('param-types');
     const inputRadius = document.getElementById('param-radius');
@@ -147,31 +204,25 @@
     // Simulation State
     let width, height;
     let atoms = [];
-    let rules = []; // N x N matrix of attraction/repulsion
+    let rules = []; 
     let isPaused = false;
     
     // Configuration
     const config = {
         atomCount: 1200,
         typeCount: 4,
-        rMax: 80,         // Maximum interaction distance
-        forceFactor: 1.0, // Multiplier for force
-        friction: 0.5,    // 1 = no friction, 0 = freeze instantly
-        beta: 0.3,        // Repulsion radius threshold (0 to 1)
-        dt: 0.02          // Time step
+        rMax: 80,         
+        forceFactor: 1.0, 
+        friction: 0.5,    
+        beta: 0.3,       
+        dt: 0.02         
     };
 
-    // Color Palette for particle types
     const colorPalette = [
-        '#FF3333', // Red
-        '#33FF33', // Green
-        '#3333FF', // Blue
-        '#FFFF33', // Yellow
-        '#33FFFF', // Cyan
-        '#FF33FF'  // Magenta
+        '#FF3333', '#33FF33', '#3333FF', 
+        '#FFFF33', '#33FFFF', '#FF33FF' 
     ];
 
-    // Initialization
     function resize() {
         width = window.innerWidth;
         height = window.innerHeight;
@@ -181,22 +232,14 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // The Force Function described in the video:
-    // 1. Repulsion if very close (0 to beta)
-    // 2. Attraction/Repulsion based on matrix (beta to 1)
+    // Interaction Function (As per video logic)
     function interact(r, attraction) {
         const beta = config.beta;
-        
-        // Too close: Repel strongly (Universal Pauli exclusion principle-ish)
         if (r < beta) {
             return (r / beta) - 1; 
-        } 
-        // In range: Apply attraction/repulsion rule with a curve
-        else if (beta < r && r < 1) {
-            // This math creates a "peak" force in the middle of the range
+        } else if (beta < r && r < 1) {
             return attraction * (1 - Math.abs(2 * r - 1 - beta) / (1 - beta));
         }
-        
         return 0;
     }
 
@@ -218,11 +261,9 @@
         for (let i = 0; i < config.typeCount; i++) {
             rules[i] = [];
             for (let j = 0; j < config.typeCount; j++) {
-                // Random float between -1 (repel) and 1 (attract)
                 rules[i][j] = (Math.random() * 2) - 1;
             }
         }
-        console.log("Rules Matrix Generated:", rules);
     }
 
     function init() {
@@ -230,11 +271,10 @@
         createAtoms();
     }
 
-    // The Physics Loop
+    // Physics Loop
     function update() {
         if (isPaused) return;
 
-        // 1. Calculate Velocities based on Forces
         for (let i = 0; i < atoms.length; i++) {
             let fx = 0;
             let fy = 0;
@@ -244,12 +284,9 @@
                 if (i === j) continue;
                 const b = atoms[j];
 
-                // Calculate distance vector
                 let dx = b.x - a.x;
                 let dy = b.y - a.y;
 
-                // Periodic Boundary Conditions (Toroidal Wrap)
-                // If particle is too far, check if it's closer via the edge
                 if (dx > width * 0.5) dx -= width;
                 if (dx < -width * 0.5) dx += width;
                 if (dy > height * 0.5) dy -= height;
@@ -257,38 +294,26 @@
 
                 const dist = Math.sqrt(dx*dx + dy*dy);
 
-                // Optimization: Ignore if outside interaction radius
                 if (dist > 0 && dist < config.rMax) {
-                    // Calculate Force
-                    // Normalize distance (0 to 1)
                     const r = dist / config.rMax;
-                    
-                    // Get rule from matrix based on colors
                     const attraction = rules[a.color][b.color];
-                    
                     const f = interact(r, attraction);
 
-                    // Convert polar force back to cartesian components
-                    // f is magnitude. Direction is (dx/dist, dy/dist).
-                    // We multiply by config.forceFactor here.
                     const force = f * config.forceFactor;
                     fx += (dx / dist) * force;
                     fy += (dy / dist) * force;
                 }
             }
 
-            // Apply force to velocity (Euler integration)
-            a.vx = (a.vx + fx * config.dt) * Math.pow(config.friction, 0.1); // Adjusted friction curve
+            a.vx = (a.vx + fx * config.dt) * Math.pow(config.friction, 0.1); 
             a.vy = (a.vy + fy * config.dt) * Math.pow(config.friction, 0.1);
         }
 
-        // 2. Update Positions
         for (let i = 0; i < atoms.length; i++) {
             const a = atoms[i];
             a.x += a.vx;
             a.y += a.vy;
 
-            // Wrap edges (Toroidal geometry)
             if (a.x < 0) a.x += width;
             if (a.x >= width) a.x -= width;
             if (a.y < 0) a.y += height;
@@ -296,24 +321,20 @@
         }
     }
 
-    // The Rendering Loop
+    // Draw Loop
     function draw() {
-        // Clear screen with slight transparency for trails? No, sticking to clean clear for this version.
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, width, height);
 
         for (let i = 0; i < atoms.length; i++) {
             const a = atoms[i];
-            // Simple rectangle is much faster than arc for thousands of particles
             ctx.fillStyle = colorPalette[a.color];
             ctx.fillRect(a.x, a.y, 2, 2); 
         }
     }
 
-    // Main Loop
     let lastTime = 0;
     function loop(timestamp) {
-        // FPS Calc
         const dt = timestamp - lastTime;
         lastTime = timestamp;
         if(timestamp % 10 < 1) fpsDiv.innerText = `FPS: ${Math.round(1000/dt)}`;
@@ -323,29 +344,25 @@
         requestAnimationFrame(loop);
     }
 
-    // --- Event Listeners ---
+    // --- Events ---
 
-    btnReset.addEventListener('click', () => {
-        init();
-    });
-
+    btnReset.addEventListener('click', () => init());
     btnPause.addEventListener('click', () => {
         isPaused = !isPaused;
         btnPause.classList.toggle('active');
     });
 
-    // Parameter inputs
     inputNumber.addEventListener('input', (e) => {
         config.atomCount = parseInt(e.target.value);
         valNumber.innerText = config.atomCount;
-        createAtoms(); // Re-create atoms to match count
+        createAtoms(); 
     });
 
     inputTypes.addEventListener('input', (e) => {
         config.typeCount = parseInt(e.target.value);
         valTypes.innerText = config.typeCount;
-        createRules(); // New rules for new color count
-        createAtoms(); // Re-assign colors
+        createRules(); 
+        createAtoms(); 
     });
 
     inputRadius.addEventListener('input', (e) => {
@@ -359,16 +376,12 @@
     });
 
     inputFriction.addEventListener('input', (e) => {
-        // Invert UI logic: 1 on slider = high friction (slow), 0 = no friction (fast)
-        // But in code: velocity *= friction. So 0.9 is slippery, 0.5 is sticky.
-        // Let's just map standard drag:
         const val = parseFloat(e.target.value);
-        config.friction = 1 - val; // Input 0.1 -> Friction 0.9 (Slippery) | Input 0.9 -> Friction 0.1 (Sticky)
+        config.friction = 1 - val; 
         valFriction.innerText = val;
     });
 
     // Start
-    // Initial config mapping
     config.friction = 1 - parseFloat(inputFriction.value);
     init();
     requestAnimationFrame(loop);
