@@ -1,0 +1,9 @@
+{
+  "name": "GeoAR Sphere",
+  "description": "A WebXR application that places a 1.5m red sphere 5m above a specific geolocation using relative GPS positioning.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
