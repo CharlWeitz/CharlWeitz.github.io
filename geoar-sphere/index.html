@@ -3,62 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoAR Navigator</title>
+    <title>GeoAR: Cube at Melkbosstrand</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #000; color: white; }
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background: #000; color: white; }
         
-        /* Mozilla WebXR Check Overlay */
-        #ios-safari-overlay {
+        /* Mozilla WebXR Check */
+        #safari-check {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); z-index: 10000;
+            background: rgba(0,0,0,0.95); z-index: 10000;
             display: none; flex-direction: column; align-items: center; 
-            justify-content: center; text-align: center; padding: 20px;
+            justify-content: center; text-align: center; padding: 30px;
         }
-        #ios-safari-overlay a { color: #00afff; font-weight: bold; text-decoration: none; border-bottom: 1px solid; }
+        #safari-check a { color: #ff3333; font-weight: bold; }
 
-        /* HUD UI */
-        #ui-layer {
+        /* AR HUD - This stays on top of the AR view */
+        #ar-hud {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; display: flex; flex-direction: column; align-items: center;
-            padding-top: 40px;
+            pointer-events: none; z-index: 10;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: space-between; padding: 40px 0;
         }
 
-        #coords-display {
-            background: rgba(0, 0, 0, 0.6); padding: 10px 20px; border-radius: 10px;
-            font-family: monospace; font-size: 14px; text-align: center; border: 1px solid rgba(255,255,255,0.2);
+        .glass-panel {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            padding: 15px; border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center; width: 80%;
         }
 
-        #direction-container {
-            margin-top: 20px; display: flex; flex-direction: column; align-items: center;
+        #coords-text { font-family: monospace; font-size: 14px; margin: 0; }
+        
+        #nav-container { display: flex; flex-direction: column; align-items: center; }
+        
+        #arrow-svg {
+            width: 80px; height: 80px;
+            filter: drop-shadow(0 0 10px rgba(255,0,0,0.8));
+            transition: transform 0.1s ease-out;
         }
 
-        #arrow {
-            width: 60px; height: 60px; transition: transform 0.1s ease-out;
-            filter: drop-shadow(0px 0px 5px rgba(255,0,0,0.8));
-        }
-
-        #distance-text { font-size: 24px; font-weight: bold; margin-top: 10px; text-shadow: 2px 2px 4px black; }
+        #dist-text { font-size: 24px; font-weight: bold; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div id="ios-safari-overlay">
-        <h2>WebXR Not Supported</h2>
+    <div id="safari-check">
+        <h2>WebXR Viewer Required</h2>
         <p>iOS Safari does not support WebXR natively.</p>
-        <p>Please use the <a href="https://apps.apple.com/us/app/webxr-viewer/id1295998056">Mozilla WebXR Viewer app</a> to view this experience.</p>
+        <p>Please open this URL in the <a href="https://apps.apple.com/us/app/webxr-viewer/id1295998056">Mozilla WebXR Viewer</a>.</p>
     </div>
 
-    <div id="ui-layer">
-        <div id="coords-display">
-            LAT: <span id="lat">--</span><br>
-            LON: <span id="lon">--</span>
+    <!-- HUD visible during AR -->
+    <div id="ar-hud">
+        <div class="glass-panel">
+            <p id="coords-text">GPS: Detecting...</p>
         </div>
 
-        <div id="direction-container">
-            <svg id="arrow" viewBox="0 0 100 100">
+        <div id="nav-container">
+            <svg id="arrow-svg" viewBox="0 0 100 100">
                 <polygon points="50,5 95,95 50,75 5,95" fill="#ff0000" stroke="white" stroke-width="2"/>
             </svg>
-            <div id="distance-text">Finding Cube...</div>
+            <div id="dist-text">-- m</div>
         </div>
     </div>
 
@@ -76,100 +81,112 @@
         import * as THREE from 'three';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-        // 1. Device Support Check
+        // 1. Browser Environment Check
         const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.platform) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.platform);
         if (isSafari && isIOS) {
-            document.getElementById('ios-safari-overlay').style.display = 'flex';
+            document.getElementById('safari-check').style.display = 'flex';
         }
 
-        // 2. Scene Setup
-        const TARGET_COORDS = { lat: -33.7325, lon: 18.437222 }; // From image
+        // 2. Constants & State
+        const TARGET_COORDS = { lat: -33.7325, lon: 18.437222 };
         let userCoords = null;
-        let compassHeading = 0;
+        let deviceHeading = 0; // Compass heading
+        let targetBearing = 0;
+        let distanceToTarget = 0;
 
+        // 3. Three.js Setup
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 2000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.xr.enabled = true;
         document.body.appendChild(renderer.domElement);
-        document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] }));
 
-        const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-        scene.add(light);
+        // Required feature 'local-floor' ensures Y=0 is the ground
+        const arButton = ARButton.createButton(renderer, { 
+            requiredFeatures: ['local-floor'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.getElementById('ar-hud') }
+        });
+        document.body.appendChild(arButton);
 
-        // Big Red Cube (2m x 2m x 2m)
+        // Lights
+        scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2));
+
+        // The Cube (2 cubic meters = 1.26m per side, or 2m per side as requested "2 cubic sq meter")
+        // Interpretation: 2m x 2m x 2m
         const geometry = new THREE.BoxGeometry(2, 2, 2);
-        const material = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x330000 });
+        const material = new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.5, roughness: 0.2 });
         const cube = new THREE.Mesh(geometry, material);
         cube.visible = false;
         scene.add(cube);
 
-        // 3. UI Elements
-        const latEl = document.getElementById('lat');
-        const lonEl = document.getElementById('lon');
-        const arrowEl = document.getElementById('arrow');
-        const distEl = document.getElementById('distance-text');
-
-        // 4. Geolocation Logic
-        function getDistanceAndBearing(lat1, lon1, lat2, lon2) {
-            const R = 6371000; 
+        // 4. Geospatial Math
+        function calculateSpatialData(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // Earth radius in meters
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) ** 2;
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             const distance = R * c;
 
-            const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-            const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-                      Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+            const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI/180);
+            const x = Math.cos(lat1 * Math.PI/180) * Math.sin(lat2 * Math.PI/180) - 
+                      Math.sin(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.cos(dLon);
             const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
             return { distance, bearing };
         }
 
+        // 5. Sensors & Tracking
         navigator.geolocation.watchPosition((pos) => {
             userCoords = pos.coords;
-            latEl.innerText = userCoords.latitude.toFixed(6);
-            lonEl.innerText = userCoords.longitude.toFixed(6);
+            const data = calculateSpatialData(userCoords.latitude, userCoords.longitude, TARGET_COORDS.lat, TARGET_COORDS.lon);
+            distanceToTarget = data.distance;
+            targetBearing = data.bearing;
+
+            document.getElementById('coords-text').innerHTML = 
+                `MY LAT: ${userCoords.latitude.toFixed(5)} | LON: ${userCoords.longitude.toFixed(5)}<br>` +
+                `GOAL: ${TARGET_COORDS.lat} | ${TARGET_COORDS.lon}`;
             
-            const info = getDistanceAndBearing(userCoords.latitude, userCoords.longitude, TARGET_COORDS.lat, TARGET_COORDS.lon);
-            distEl.innerText = info.distance > 1000 ? (info.distance/1000).toFixed(2) + " km" : info.distance.toFixed(1) + " m";
-            
-            // Adjust 3D Cube Position (relative to start)
-            const angleRad = (info.bearing - compassHeading) * Math.PI / 180;
-            cube.position.set(info.distance * Math.sin(angleRad), 0, -info.distance * Math.cos(angleRad));
+            document.getElementById('dist-text').innerText = 
+                distanceToTarget > 1000 ? (distanceToTarget/1000).toFixed(2) + " km" : Math.round(distanceToTarget) + " m";
+
+            // Place cube in virtual space relative to center (0,0,0)
+            // Note: This is a simplification. For long distances, the cube won't be visible.
+            // We set Y to 3 for the "3 meters above" requirement.
+            const angleRad = (targetBearing) * Math.PI / 180;
+            cube.position.set(
+                Math.sin(angleRad) * distanceToTarget, 
+                3, 
+                -Math.cos(angleRad) * distanceToTarget
+            );
             cube.visible = true;
-        }, (err) => console.error(err), { enableHighAccuracy: true });
+        }, null, { enableHighAccuracy: true });
 
-        // Compass orientation for browsers that support it
+        // Compass Heading logic
         window.addEventListener('deviceorientationabsolute', (e) => {
-            if (e.alpha !== null) compassHeading = 360 - e.alpha;
-        });
+            if (e.alpha !== null) {
+                // alpha is the rotation around Z axis. 0 is North on absolute event.
+                deviceHeading = e.alpha; 
+            }
+        }, true);
 
-        // 5. Arrow Rotation Logic (Runs every frame)
+        // 6. Animation Loop (Handles Arrow Rotation)
         renderer.setAnimationLoop(() => {
-            if (renderer.xr.isPresenting && cube.visible) {
-                // Get the direction from the camera to the cube
-                const camPos = new THREE.Vector3();
-                camera.getWorldPosition(camPos);
-                
-                const targetDirection = new THREE.Vector3().subVectors(cube.position, camPos);
-                
-                // Project vectors onto the XZ plane to get 2D rotation
-                const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-                camForward.y = 0;
-                targetDirection.y = 0;
+            if (renderer.xr.isPresenting) {
+                // 1. Get Camera rotation around Y axis (where the phone is pointing in AR space)
+                const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                const camRotationDeg = (-euler.y * 180 / Math.PI + 360) % 360;
 
-                // Calculate angle between where user is looking and where cube is
-                const angle = camForward.angleTo(targetDirection);
-                const cross = new THREE.Vector3().crossVectors(camForward, targetDirection);
-                const finalAngle = cross.y > 0 ? -angle : angle;
+                // 2. Calculate relative angle for the arrow
+                // targetBearing (True North) - deviceHeading (Compass) - camRotation
+                // In many WebXR implementations, if the session starts facing North, 
+                // the math simplifies. Here we calculate relative to user view:
+                const arrowRotation = targetBearing - deviceHeading - camRotationDeg;
 
-                arrowEl.style.transform = `rotate(${finalAngle}rad)`;
+                document.getElementById('arrow-svg').style.transform = `rotate(${arrowRotation}deg)`;
             }
             renderer.render(scene, camera);
         });
